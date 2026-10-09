@@ -1,0 +1,8 @@
+{
+  "name": "chai-non-chat",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "@anthropic-ai/sdk": "latest" }
+}

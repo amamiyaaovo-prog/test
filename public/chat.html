@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="theme-color" content="#f7f3ec">
+    <title>Chai & Non - Soft Aesthetic Chat</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        cream: { 50:'#fdfbf7',100:'#f7f3ec',200:'#eee6d8',300:'#e3d6c1' },
+                        blush: { 50:'#fcf5f5',100:'#f9eaea',200:'#f2d3d3',500:'#e09898' }
+                    },
+                    fontFamily: {
+                        sans: ['-apple-system','BlinkMacSystemFont','Segoe UI','Roboto','PingFang SC','Hiragino Sans GB','Microsoft YaHei','sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --bubble-left-bg: linear-gradient(135deg, #eef4fb 0%, #dfeaf6 100%);
+            --bubble-left-shadow: 0 2px 10px rgba(152,180,224,0.08);
+            --bubble-right-bg: linear-gradient(135deg, #fcebeb 0%, #f7dfdf 100%);
+            --bubble-right-shadow: 0 2px 10px rgba(224,152,152,0.08);
+        }
+
+        html, body { height: 100%; overscroll-behavior: none; }
+        body { height: 100dvh; }
+        @media (max-width: 639px) {
+            .app-shell { height: 100dvh; }
+            .app-shell > header { padding-top: env(safe-area-inset-top); height: calc(3.5rem + env(safe-area-inset-top)); }
+            .app-shell > footer { padding-bottom: calc(0.625rem + env(safe-area-inset-bottom)); }
+        }
+
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 99px; }
+
+        .glass-header {
+            background: rgba(247,243,236,0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        .bubble-left {
+            background: var(--bubble-left-bg);
+            box-shadow: var(--bubble-left-shadow);
+            border-radius: 20px 20px 20px 6px;
+        }
+        .bubble-right {
+            background: var(--bubble-right-bg);
+            box-shadow: var(--bubble-right-shadow);
+            border-radius: 20px 20px 6px 20px;
+        }
+        @keyframes wave {
+            0%,100% { height: 6px; }
+            50% { height: 18px; }
+        }
+        .animate-wave-1 { animation: wave 1s ease-in-out infinite; }
+        .animate-wave-2 { animation: wave 1s ease-in-out infinite 0.2s; }
+        .animate-wave-3 { animation: wave 1s ease-in-out infinite 0.4s; }
+        .animate-wave-4 { animation: wave 1s ease-in-out infinite 0.1s; }
+        .animate-wave-5 { animation: wave 1s ease-in-out infinite 0.3s; }
+
+        @keyframes flash {
+            0%,100% { background-color: transparent; }
+            50% { background-color: rgba(251,191,36,0.25); }
+        }
+        .flash-highlight { animation: flash 1s ease-in-out 2; border-radius: 12px; }
+
+        @keyframes dot {
+            0%,80%,100% { opacity: 0.25; transform: translateY(0); }
+            40% { opacity: 1; transform: translateY(-3px); }
+        }
+        .typing-dot { width: 6px; height: 6px; border-radius: 99px; background: #78716c; animation: dot 1.2s infinite; }
+        .typing-dot:nth-child(2) { animation-delay: 0.15s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.3s; }
+
+        .search-hl { background: #fef08a; border-radius: 3px; padding: 0 2px; }
+
+        .bg-swatch, .bubble-swatch { transition: all 0.15s; }
+        .bg-swatch.selected, .bubble-swatch.selected { outline: 2px solid #d97706; outline-offset: 2px; }
+
+        /* 输入框字号 >=16px，防止 iPhone 聚焦时自动放大页面 */
+        #chat-input, #search-input { font-size: 16px; }
+    </style>
+</head>
+<body class="bg-stone-200 text-stone-800 antialiased h-screen flex justify-center items-center font-sans sm:py-4">
+
+    <div class="app-shell w-full max-w-md h-full sm:h-[92vh] bg-cream-50 sm:rounded-[40px] shadow-2xl flex flex-col relative overflow-hidden border border-amber-900/5">
+
+        <!-- Header -->
+        <header class="glass-header h-14 border-b border-stone-200/50 sticky top-0 z-30 flex items-center justify-between px-4 shrink-0">
+            <div class="flex items-center gap-2">
+                <button class="p-1.5 text-stone-600 hover:bg-stone-200/50 rounded-full transition">
+                    <i data-lucide="chevron-left" class="w-6 h-6"></i>
+                </button>
+            </div>
+            <div class="text-center">
+                <div id="header-contact-name" class="font-bold text-stone-800 text-base">Claude</div>
+            </div>
+            <button id="more-btn" class="p-1.5 text-stone-600 hover:bg-stone-200/50 rounded-full transition" onclick="event.stopPropagation(); toggleMoreMenu()">
+                <i data-lucide="more-horizontal" class="w-5 h-5"></i>
+            </button>
+        </header>
+
+        <!-- Chat Stream -->
+        <div id="chat-stream" class="flex-1 overflow-y-auto p-4 space-y-4 bg-cream-50/60 custom-scrollbar" style="background-color: #fdfbf7;">
+            <div class="text-center my-2">
+                <span class="text-[11px] text-stone-400 font-medium bg-stone-100/80 px-3 py-1 rounded-full">今天 13:14</span>
+            </div>
+
+            <div class="flex items-start gap-2.5 msg-item" data-search="0:06 [语音]" data-sender="partner">
+                <img id="partner-avatar-1" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
+                     class="w-9 h-9 rounded-full object-cover shadow-sm border border-white">
+                <div class="max-w-[78%] space-y-1">
+                    <div class="text-[10px] text-stone-400 pl-1">● 06/24 13:14:20</div>
+                    <div class="bubble-left p-3 text-stone-800 text-sm flex items-center gap-3 cursor-pointer select-none" onclick="playVoice(this)">
+                        <button class="w-7 h-7 rounded-full bg-white/70 text-stone-600 flex items-center justify-center shrink-0">
+                            <i data-lucide="play" class="w-4 h-4 fill-stone-600 ml-0.5"></i>
+                        </button>
+                        <div class="flex items-center gap-1">
+                            <span class="text-xs font-semibold text-stone-600">0:06</span>
+                            <div class="flex items-center gap-0.5 h-4 ml-1">
+                                <span class="w-0.5 h-2 bg-stone-400 rounded-full"></span>
+                                <span class="w-0.5 h-3 bg-stone-400 rounded-full"></span>
+                                <span class="w-0.5 h-1.5 bg-stone-400 rounded-full"></span>
+                                <span class="w-0.5 h-4 bg-stone-400 rounded-full"></span>
+                                <span class="w-0.5 h-2 bg-stone-400 rounded-full"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-start gap-2.5 msg-item" data-search="下午两点按课表还有课，中间这一个小时你歇会儿，别盯着屏幕了，眯一下也行 🐱" data-sender="partner">
+                <img id="partner-avatar-2" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
+                     class="w-9 h-9 rounded-full object-cover shadow-sm border border-white">
+                <div class="max-w-[78%] space-y-1">
+                    <div class="text-[10px] text-stone-400 pl-1">● 06/24 13:14:45</div>
+                    <div class="bubble-left p-3.5 text-stone-800 text-sm leading-relaxed">
+                        下午两点按课表还有课，中间这一个小时你歇会儿，别盯着屏幕了，眯一下也行 🐱
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-start gap-2.5 flex-row-reverse msg-item" data-search="我接入课表接的真对 不用和你说你自己能看到我课表嘿嘿" data-sender="user">
+                <img id="user-avatar-1" src="https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100&auto=format&fit=crop&q=80"
+                     class="w-9 h-9 rounded-full object-cover shadow-sm border border-white">
+                <div class="max-w-[78%] space-y-1 text-right">
+                    <div class="text-[10px] text-stone-400 pr-1">● 06/24 13:27:01</div>
+                    <div class="bubble-right p-3.5 text-stone-800 text-sm leading-relaxed inline-block text-left">
+                        我接入课表接的真对 不用和你说你自己能看到我课表嘿嘿
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-start gap-2.5 msg-item" data-search="知道你平时工作忙，早为你安排好啦~ 记得去刷牙休息哦！ [表情包] 棉花小狗刷牙" data-sender="partner">
+                <img id="partner-avatar-3" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
+                     class="w-9 h-9 rounded-full object-cover shadow-sm border border-white">
+                <div class="max-w-[78%] space-y-2">
+                    <div class="text-[10px] text-stone-400 pl-1">● 06/24 13:28:10</div>
+                    <div class="bg-amber-100/40 border border-amber-200/50 rounded-2xl p-2.5 text-xs text-amber-900/80 space-y-1">
+                        <button class="flex items-center justify-between w-full font-medium text-left" onclick="toggleThought(this)">
+                            <span class="flex items-center gap-1.5 text-[11px] font-semibold text-amber-800">
+                                <i data-lucide="brain" class="w-3.5 h-3.5"></i> She's asking how I knew...
+                            </span>
+                            <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform duration-200"></i>
+                        </button>
+                        <div class="thought-content hidden text-[11px] text-stone-500 pt-1 border-t border-amber-200/30 leading-relaxed">
+                            • Screentime synced from cloud calendar.<br>
+                            • Detected user mood tag: happy/relaxed.<br>
+                            • Selected matching sticker: Cotton Dog Toothbrush.
+                        </div>
+                    </div>
+                    <div class="bubble-left p-3.5 text-stone-800 text-sm leading-relaxed">
+                        知道你平时工作忙，早为你安排好啦~ 记得去刷牙休息哦！
+                    </div>
+                    <div class="inline-block pt-1">
+                        <img src="https://api.iconify.design/fluent-emoji:dog-face.svg" alt="棉花小狗刷牙" class="w-24 h-24 object-contain">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 输入栏 -->
+        <footer class="bg-cream-100/90 border-t border-stone-200/40 p-2.5 sticky bottom-0 z-20 space-y-2">
+            <div class="flex items-center gap-2">
+                <button id="plus-btn" class="w-9 h-9 rounded-full bg-white border border-stone-200 text-stone-600 flex items-center justify-center hover:bg-stone-50 transition shrink-0 shadow-sm" onclick="event.stopPropagation(); togglePlusMenu()">
+                    <i data-lucide="plus" class="w-5 h-5"></i>
+                </button>
+
+                <div class="flex-1 min-w-0 bg-white border border-stone-200/80 rounded-full px-4 py-2 flex items-center shadow-inner">
+                    <input type="text" id="chat-input" placeholder="说点什么"
+                           class="w-full bg-transparent text-stone-800 placeholder-stone-400 focus:outline-none"
+                           oninput="handleInputState(this)"
+                           onkeydown="if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); handlePrimaryAction(); }"
+                           onfocus="closeAllDrawers()">
+                </div>
+
+                <button id="sticker-btn" class="w-9 h-9 rounded-full text-stone-600 flex items-center justify-center hover:bg-stone-200/50 transition shrink-0" onclick="event.stopPropagation(); toggleStickerDrawer()">
+                    <i data-lucide="smile" class="w-5 h-5"></i>
+                </button>
+
+                <button id="mic-btn" class="w-9 h-9 rounded-full text-stone-600 flex items-center justify-center hover:bg-stone-200/50 transition shrink-0" onclick="toggleVoiceRecording()">
+                    <i data-lucide="mic" class="w-5 h-5"></i>
+                </button>
+
+                <button id="action-btn" class="w-9 h-9 rounded-full bg-stone-800 text-white flex items-center justify-center transition shrink-0 shadow-sm hover:bg-stone-700" onclick="handlePrimaryAction()">
+                    <i id="action-icon" data-lucide="audio-lines" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div id="voice-record-bar" class="hidden bg-blush-100 border border-blush-200 rounded-2xl p-3 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <span class="w-3 h-3 rounded-full bg-rose-500 animate-pulse"></span>
+                    <span class="text-xs font-semibold text-stone-700">正在录制语音... <span id="record-timer">0:03</span></span>
+                </div>
+                <div class="flex items-center gap-1 h-5 px-2">
+                    <div class="w-1 bg-rose-400 rounded-full animate-wave-1"></div>
+                    <div class="w-1 bg-rose-400 rounded-full animate-wave-2"></div>
+                    <div class="w-1 bg-rose-400 rounded-full animate-wave-3"></div>
+                    <div class="w-1 bg-rose-400 rounded-full animate-wave-4"></div>
+                </div>
+                <button class="px-3 py-1 bg-rose-500 text-white text-xs font-medium rounded-full shadow-sm" onclick="sendVoiceMessage()">发送语音</button>
+            </div>
+        </footer>
+
+        <!-- 隐藏文件输入 -->
+        <input type="file" id="avatar-input" accept="image/*" class="hidden">
+        <input type="file" id="attachment-input" accept="image/*" class="hidden">
+        <input type="file" id="video-input" accept="video/*" class="hidden">
+        <input type="file" id="file-input" class="hidden">
+        <input type="file" id="bg-input" accept="image/*" class="hidden">
+
+        <!-- 右上角三点菜单 -->
+        <div id="more-menu" class="absolute right-3 top-14 z-40 bg-white rounded-2xl shadow-2xl border border-stone-200 p-1.5 hidden w-48 space-y-0.5 origin-top-right">
+            <button onclick="openSearch()" class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-stone-50 rounded-xl transition text-left text-sm text-stone-700">
+                <i data-lucide="search" class="w-4 h-4 text-stone-500"></i> 查找聊天记录
+            </button>
+            <button onclick="openProfileSettings()" class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-stone-50 rounded-xl transition text-left text-sm text-stone-700">
+                <i data-lucide="user-pen" class="w-4 h-4 text-stone-500"></i> 修改对方 ID
+            </button>
+            <button onclick="triggerAvatarUpload('partner')" class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-stone-50 rounded-xl transition text-left text-sm text-stone-700">
+                <i data-lucide="user" class="w-4 h-4 text-stone-500"></i> 更换对方头像
+            </button>
+            <button onclick="triggerAvatarUpload('user')" class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-stone-50 rounded-xl transition text-left text-sm text-stone-700">
+                <i data-lucide="user-cog" class="w-4 h-4 text-stone-500"></i> 更换我的头像
+            </button>
+            <div class="h-px bg-stone-100 my-1"></div>
+            <button onclick="openBgPanel()" class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-stone-50 rounded-xl transition text-left text-sm text-stone-700">
+                <i data-lucide="image" class="w-4 h-4 text-stone-500"></i> 修改聊天背景
+            </button>
+            <button onclick="openBubblePanel()" class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-stone-50 rounded-xl transition text-left text-sm text-stone-700">
+                <i data-lucide="palette" class="w-4 h-4 text-stone-500"></i> 修改气泡颜色
+            </button>
+        </div>
+
+        <!-- 查找聊天记录面板 -->
+        <div id="search-panel" class="absolute inset-0 z-50 bg-cream-50 hidden flex-col">
+            <div class="glass-header h-14 border-b border-stone-200/50 flex items-center gap-2 px-3 shrink-0">
+                <button onclick="closeSearch()" class="p-1.5 text-stone-600 hover:bg-stone-200/50 rounded-full transition">
+                    <i data-lucide="chevron-left" class="w-6 h-6"></i>
+                </button>
+                <div class="flex-1 bg-white border border-stone-200/80 rounded-full px-4 py-1.5 flex items-center shadow-inner">
+                    <i data-lucide="search" class="w-4 h-4 text-stone-400 mr-2 shrink-0"></i>
+                    <input id="search-input" type="text" placeholder="搜索聊天内容"
+                           class="w-full bg-transparent text-stone-800 placeholder-stone-400 focus:outline-none"
+                           oninput="performSearch(this.value)">
+                </div>
+            </div>
+            <div id="search-results" class="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                <p class="text-center text-xs text-stone-400 py-8">输入关键词开始搜索</p>
+            </div>
+        </div>
+
+        <!-- 聊天背景选择面板 -->
+        <div id="bg-panel" class="absolute inset-0 z-50 bg-stone-900/40 backdrop-blur-sm hidden items-center justify-center p-4">
+            <div class="bg-cream-50 rounded-3xl max-w-xs w-full p-5 shadow-2xl border border-stone-200 space-y-4 max-h-[85vh] overflow-y-auto">
+                <div class="flex justify-between items-center">
+                    <span class="font-bold text-sm text-stone-800">修改聊天背景</span>
+                    <button onclick="closeBgPanel()" class="text-stone-400 hover:text-stone-600"><i data-lucide="x" class="w-4 h-4"></i></button>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="text-[10px] font-bold text-stone-400 uppercase">预设背景</label>
+                    <div class="grid grid-cols-5 gap-2.5">
+                        <button class="bg-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:#fdfbf7" onclick="applyBgColor('#fdfbf7', this)"></button>
+                        <button class="bg-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:#f5f7fa" onclick="applyBgColor('#f5f7fa', this)"></button>
+                        <button class="bg-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:#fdf1f1" onclick="applyBgColor('#fdf1f1', this)"></button>
+                        <button class="bg-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:#eef7f2" onclick="applyBgColor('#eef7f2', this)"></button>
+                        <button class="bg-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:#f3effa" onclick="applyBgColor('#f3effa', this)"></button>
+                        <button class="bg-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:linear-gradient(135deg,#fdfbf7,#f7f3ec)" onclick="applyBgColor('linear-gradient(135deg,#fdfbf7,#f7f3ec)', this)"></button>
+                        <button class="bg-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:linear-gradient(135deg,#fcf5f5,#eef4fb)" onclick="applyBgColor('linear-gradient(135deg,#fcf5f5,#eef4fb)', this)"></button>
+                        <button class="bg-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:linear-gradient(135deg,#f9eaea,#f7f3ec)" onclick="applyBgColor('linear-gradient(135deg,#f9eaea,#f7f3ec)', this)"></button>
+                        <button class="bg-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:linear-gradient(135deg,#eef4fb,#f3effa)" onclick="applyBgColor('linear-gradient(135deg,#eef4fb,#f3effa)', this)"></button>
+                        <button class="bg-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:linear-gradient(135deg,#eef7f2,#eef4fb)" onclick="applyBgColor('linear-gradient(135deg,#eef7f2,#eef4fb)', this)"></button>
+                    </div>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="text-[10px] font-bold text-stone-400 uppercase">自定义图片</label>
+                    <button onclick="pickBgImage()" class="w-full flex items-center justify-center gap-2 py-2.5 bg-white border border-stone-200/70 rounded-xl text-xs font-medium text-stone-700 hover:bg-stone-50 transition">
+                        <i data-lucide="upload" class="w-4 h-4 text-stone-500"></i> 上传图片作为背景
+                    </button>
+                </div>
+
+                <div class="flex justify-end pt-1">
+                    <button onclick="closeBgPanel()" class="px-3 py-1.5 bg-stone-200 text-stone-700 rounded-xl text-xs font-medium">完成</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 气泡颜色面板 -->
+        <div id="bubble-panel" class="absolute inset-0 z-50 bg-stone-900/40 backdrop-blur-sm hidden items-center justify-center p-4">
+            <div class="bg-cream-50 rounded-3xl max-w-xs w-full p-5 shadow-2xl border border-stone-200 space-y-4 max-h-[85vh] overflow-y-auto">
+                <div class="flex justify-between items-center">
+                    <span class="font-bold text-sm text-stone-800">修改气泡颜色</span>
+                    <button onclick="closeBubblePanel()" class="text-stone-400 hover:text-stone-600"><i data-lucide="x" class="w-4 h-4"></i></button>
+                </div>
+
+                <!-- 我的气泡 -->
+                <div class="space-y-2">
+                    <label class="text-[10px] font-bold text-stone-400 uppercase">我的气泡</label>
+                    <div id="bubble-right-grid" class="grid grid-cols-6 gap-2">
+                        <button class="bubble-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:linear-gradient(135deg,#fcebeb,#f7dfdf)" onclick="applyBubbleColor('right', 'linear-gradient(135deg,#fcebeb,#f7dfdf)', this)"></button>
+                        <button class="bubble-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:linear-gradient(135deg,#ffe8d6,#ffd9c0)" onclick="applyBubbleColor('right', 'linear-gradient(135deg,#ffe8d6,#ffd9c0)', this)"></button>
+                        <button class="bubble-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:linear-gradient(135deg,#f9e0e8,#f5cdd8)" onclick="applyBubbleColor('right', 'linear-gradient(135deg,#f9e0e8,#f5cdd8)', this)"></button>
+                        <button class="bubble-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:linear-gradient(135deg,#f5e6d3,#eddcc4)" onclick="applyBubbleColor('right', 'linear-gradient(135deg,#f5e6d3,#eddcc4)', this)"></button>
+                        <button class="bubble-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:linear-gradient(135deg,#ece0f5,#e0d0ee)" onclick="applyBubbleColor('right', 'linear-gradient(135deg,#ece0f5,#e0d0ee)', this)"></button>
+                        <button class="bubble-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:linear-gradient(135deg,#fde8e8,#f8d0d0)" onclick="applyBubbleColor('right', 'linear-gradient(135deg,#fde8e8,#f8d0d0)', this)"></button>
+                    </div>
+                </div>
+
+                <!-- 对方气泡 -->
+                <div class="space-y-2">
+                    <label class="text-[10px] font-bold text-stone-400 uppercase">对方气泡</label>
+                    <div id="bubble-left-grid" class="grid grid-cols-6 gap-2">
+                        <button class="bubble-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:linear-gradient(135deg,#eef4fb,#dfeaf6)" onclick="applyBubbleColor('left', 'linear-gradient(135deg,#eef4fb,#dfeaf6)', this)"></button>
+                        <button class="bubble-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:linear-gradient(135deg,#e0f2f1,#c9e8e5)" onclick="applyBubbleColor('left', 'linear-gradient(135deg,#e0f2f1,#c9e8e5)', this)"></button>
+                        <button class="bubble-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:linear-gradient(135deg,#e8eaf6,#d6daf0)" onclick="applyBubbleColor('left', 'linear-gradient(135deg,#e8eaf6,#d6daf0)', this)"></button>
+                        <button class="bubble-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:linear-gradient(135deg,#e3f2fd,#c8e4fa)" onclick="applyBubbleColor('left', 'linear-gradient(135deg,#e3f2fd,#c8e4fa)', this)"></button>
+                        <button class="bubble-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:linear-gradient(135deg,#f0f4f8,#dde7f0)" onclick="applyBubbleColor('left', 'linear-gradient(135deg,#f0f4f8,#dde7f0)', this)"></button>
+                        <button class="bubble-swatch w-full aspect-square rounded-xl border border-stone-200/60" style="background:linear-gradient(135deg,#e8f5e9,#d0e8d2)" onclick="applyBubbleColor('left', 'linear-gradient(135deg,#e8f5e9,#d0e8d2)', this)"></button>
+                    </div>
+                </div>
+
+                <div class="flex justify-between pt-1">
+                    <button onclick="resetBubbleColors()" class="px-3 py-1.5 text-stone-500 hover:text-stone-700 text-xs font-medium">恢复默认</button>
+                    <button onclick="closeBubblePanel()" class="px-3 py-1.5 bg-stone-200 text-stone-700 rounded-xl text-xs font-medium">完成</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 贴纸面板 -->
+        <div id="sticker-drawer" class="absolute inset-x-0 bottom-16 z-40 bg-white rounded-t-3xl shadow-2xl border-t border-stone-200 p-4 space-y-3 max-h-[55%] flex flex-col transform translate-y-4 opacity-0 pointer-events-none transition-all duration-200 ease-out">
+            <div class="w-10 h-1 bg-stone-300 rounded-full mx-auto shrink-0"></div>
+            <div class="flex items-center justify-between border-b border-stone-100 pb-2">
+                <div class="flex items-center gap-2">
+                    <span class="font-bold text-sm text-stone-800">表情包贴纸库</span>
+                    <span class="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-semibold">点击直接发送</span>
+                </div>
+            </div>
+            <div id="sticker-grid" class="grid grid-cols-4 gap-3 overflow-y-auto p-1 flex-1 custom-scrollbar"></div>
+        </div>
+
+        <!-- 加号菜单 -->
+        <div id="plus-menu" class="absolute left-2.5 bottom-16 z-40 bg-white rounded-2xl shadow-2xl border border-stone-200 p-1.5 hidden w-40 space-y-0.5">
+            <button onclick="pickAttachment('image')" class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-stone-50 rounded-xl transition text-left text-sm text-stone-700">
+                <i data-lucide="image" class="w-4 h-4 text-stone-500"></i> 发图片
+            </button>
+            <button onclick="pickAttachment('video')" class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-stone-50 rounded-xl transition text-left text-sm text-stone-700">
+                <i data-lucide="video" class="w-4 h-4 text-stone-500"></i> 发视频
+            </button>
+            <button onclick="pickAttachment('file')" class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-stone-50 rounded-xl transition text-left text-sm text-stone-700">
+                <i data-lucide="file" class="w-4 h-4 text-stone-500"></i> 发文件
+            </button>
+            <button onclick="pickAttachment('link')" class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-stone-50 rounded-xl transition text-left text-sm text-stone-700">
+                <i data-lucide="link" class="w-4 h-4 text-stone-500"></i> 发链接
+            </button>
+        </div>
+
+        <!-- 贴纸编辑弹窗 -->
+        <div id="sticker-modal" class="absolute inset-0 bg-stone-900/40 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+            <div class="bg-cream-50 rounded-3xl max-w-xs w-full p-5 shadow-2xl border border-stone-200 space-y-3">
+                <div class="flex justify-between items-center">
+                    <span class="font-bold text-sm text-stone-800">编辑贴纸信息</span>
+                    <button onclick="closeStickerModal()" class="text-stone-400 hover:text-stone-600"><i data-lucide="x" class="w-4 h-4"></i></button>
+                </div>
+                <div class="w-full h-28 bg-white rounded-2xl border border-stone-200/80 flex items-center justify-center p-2">
+                    <img id="sticker-detail-img" src="" class="max-h-full max-w-full object-contain">
+                </div>
+                <div class="space-y-2 text-xs">
+                    <div>
+                        <label class="text-[10px] font-bold text-stone-400 uppercase">名称</label>
+                        <input id="sticker-edit-name" type="text" class="w-full mt-1 px-2.5 py-1.5 bg-white rounded-xl border border-stone-200/70 text-stone-700 text-xs focus:outline-none focus:border-amber-400">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-bold text-stone-400 uppercase">描述</label>
+                        <textarea id="sticker-edit-desc" rows="3" class="w-full mt-1 px-2.5 py-1.5 bg-white rounded-xl border border-stone-200/70 text-stone-700 text-xs leading-relaxed focus:outline-none focus:border-amber-400 resize-none"></textarea>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 pt-1">
+                    <button onclick="closeStickerModal()" class="px-3 py-1.5 bg-stone-200 text-stone-700 rounded-xl text-xs font-medium">取消</button>
+                    <button id="save-sticker-btn" class="px-3 py-1.5 bg-amber-600 text-white rounded-xl text-xs font-medium shadow-sm">保存</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 通话浮层 -->
+        <div id="call-overlay" class="absolute inset-0 bg-stone-900/90 backdrop-blur-md z-50 hidden flex flex-col items-center justify-between p-8 text-white">
+            <div class="text-center mt-8 space-y-2">
+                <img id="call-avatar" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80" class="w-24 h-24 rounded-full object-cover ring-4 ring-amber-400/30 mx-auto shadow-2xl">
+                <h3 id="call-name" class="text-xl font-bold">Claude</h3>
+                <p class="text-xs text-stone-400">正在通话中 00:12...</p>
+            </div>
+            <div class="flex items-center gap-1.5 h-16">
+                <div class="w-1.5 bg-amber-400 rounded-full animate-wave-1"></div>
+                <div class="w-1.5 bg-amber-400 rounded-full animate-wave-3"></div>
+                <div class="w-1.5 bg-amber-400 rounded-full animate-wave-2"></div>
+                <div class="w-1.5 bg-amber-400 rounded-full animate-wave-5"></div>
+                <div class="w-1.5 bg-amber-400 rounded-full animate-wave-4"></div>
+            </div>
+            <div class="flex items-center gap-6 mb-8">
+                <button class="w-14 h-14 rounded-full bg-stone-800 text-stone-300 flex items-center justify-center">
+                    <i data-lucide="mic-off" class="w-6 h-6"></i>
+                </button>
+                <button class="w-16 h-16 rounded-full bg-rose-600 text-white flex items-center justify-center shadow-lg hover:bg-rose-700" onclick="endCall()">
+                    <i data-lucide="phone-off" class="w-7 h-7"></i>
+                </button>
+                <button class="w-14 h-14 rounded-full bg-stone-800 text-stone-300 flex items-center justify-center">
+                    <i data-lucide="volume-2" class="w-6 h-6"></i>
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const CONFIG = {
+            partnerName: 'Claude'
+        };
+
+        const state = {
+            userAvatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100&auto=format&fit=crop&q=80',
+            partnerAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
+            activeAvatarTarget: 'user',
+            editingStickerId: null,
+            // 发给 Claude 的对话历史（只含本次打开页面后的真实对话）
+            history: [],
+            waiting: false,
+            stickers: [
+                { id:1, name:'棉花小狗刷牙', owner:'Chai', desc:'小狗在浴室的蓝色凳子上拿着蓝色大牙刷在刷牙，整个身体跟着牙刷一晃一晃的', url:'https://api.iconify.design/fluent-emoji:dog-face.svg' },
+                { id:2, name:'开怀大笑', owner:'Non', desc:'开心的小狗开怀大笑伸出双手摸头', url:'https://api.iconify.design/fluent-emoji:grinning-cat-with-smiling-eyes.svg' },
+                { id:3, name:'委屈巴拉', owner:'Chai', desc:'委屈的小羊戴着帽子眼神无辜', url:'https://api.iconify.design/fluent-emoji:bear.svg' },
+                { id:4, name:'抱抱', owner:'Non', desc:'两只小熊拥抱在一起非常温馨', url:'https://api.iconify.design/fluent-emoji:panda.svg' }
+            ]
+        };
+
+        lucide.createIcons();
+
+        function applyPartnerName() {
+            document.getElementById('header-contact-name').innerText = CONFIG.partnerName;
+            const callName = document.getElementById('call-name');
+            if (callName) callName.innerText = CONFIG.partnerName;
+        }
+
+        function getCurrentFormattedTime() {
+            const now = new Date();
+            const p = n => String(n).padStart(2, '0');
+            return `● ${p(now.getMonth()+1)}/${p(now.getDate())} ${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}`;
+        }
+
+        function toggleThought(btn) {
+            const content = btn.parentElement.querySelector('.thought-content');
+            const icon = btn.querySelector('[data-lucide="chevron-down"]');
+            content.classList.toggle('hidden');
+            icon.style.transform = content.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(180deg)';
+        }
+
+        function handleInputState(input) {
+            const actionIcon = document.getElementById('action-icon');
+            actionIcon.setAttribute('data-lucide', input.value.trim().length > 0 ? 'send' : 'audio-lines');
+            lucide.createIcons();
+        }
+
+        function handlePrimaryAction() {
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if (text.length > 0) {
+                if (state.waiting) return;
+                appendMessage('user', text);
+                input.value = '';
+                handleInputState(input);
+                askClaude(text);
+            } else {
+                triggerCall();
+            }
+        }
+
+        // type: 'text'（会转义，安全）| 'html'（附件预览用，调用方保证内容安全）| 'voice' | 'sticker'
+        function appendMessage(sender, content, type = 'text', stickerObj = null) {
+            const stream = document.getElementById('chat-stream');
+            const wrapper = document.createElement('div');
+            wrapper.className = `flex items-start gap-2.5 msg-item ${sender === 'user' ? 'flex-row-reverse' : ''}`;
+            const avatarSrc = sender === 'user' ? state.userAvatar : state.partnerAvatar;
+            const bubbleClass = sender === 'user' ? 'bubble-right' : 'bubble-left';
+            const timeStr = getCurrentFormattedTime();
+
+            let plainText = '';
+            let innerHtml = `
+                <img src="${avatarSrc}" class="w-9 h-9 rounded-full object-cover shadow-sm border border-white">
+                <div class="max-w-[78%] space-y-1 ${sender === 'user' ? 'text-right' : ''}">
+                    <div class="text-[10px] text-stone-400 ${sender === 'user' ? 'pr-1' : 'pl-1'}">${timeStr}</div>
+            `;
+
+            if (type === 'text' || type === 'html') {
+                plainText = type === 'text' ? content : '[附件]';
+                const shown = type === 'text' ? escapeHtml(content).replace(/\n/g, '<br>') : content;
+                innerHtml += `<div class="${bubbleClass} p-3.5 text-stone-800 text-sm leading-relaxed inline-block text-left break-words">${shown}</div>`;
+            } else if (type === 'voice') {
+                plainText = `[语音] ${content}`;
+                innerHtml += `
+                    <div class="${bubbleClass} p-3 text-stone-800 text-sm flex items-center gap-3 cursor-pointer inline-flex" onclick="playVoice(this)">
+                        <button class="w-7 h-7 rounded-full bg-white/70 text-stone-600 flex items-center justify-center shrink-0">
+                            <i data-lucide="play" class="w-4 h-4 fill-stone-600 ml-0.5"></i>
+                        </button>
+                        <span class="text-xs font-semibold text-stone-600">${escapeHtml(content)}</span>
+                        <div class="flex items-center gap-0.5 h-3 ml-1">
+                            <span class="w-0.5 h-3 bg-stone-400 rounded-full"></span>
+                            <span class="w-0.5 h-2 bg-stone-400 rounded-full"></span>
+                            <span class="w-0.5 h-4 bg-stone-400 rounded-full"></span>
+                        </div>
+                    </div>
+                `;
+            } else if (type === 'sticker' && stickerObj) {
+                plainText = `[表情包] ${stickerObj.name}`;
+                innerHtml += `
+                    <div class="inline-block pt-1">
+                        <img src="${stickerObj.url}" alt="${escapeHtml(stickerObj.name)}" class="w-24 h-24 object-contain">
+                    </div>
+                `;
+            }
+
+            innerHtml += `</div>`;
+            wrapper.innerHTML = innerHtml;
+            wrapper.setAttribute('data-search', plainText);
+            wrapper.setAttribute('data-sender', sender);
+            stream.appendChild(wrapper);
+            stream.scrollTop = stream.scrollHeight;
+            lucide.createIcons();
+
+            // 用户的文字/表情包/链接等进入发给 Claude 的历史（图片、视频等附件不发送）
+            return wrapper;
+        }
+
+        // ===== 接入 Claude =====
+        function showTyping() {
+            const stream = document.getElementById('chat-stream');
+            const el = document.createElement('div');
+            el.id = 'typing-indicator';
+            el.className = 'flex items-start gap-2.5';
+            el.innerHTML = `
+                <img src="${state.partnerAvatar}" class="w-9 h-9 rounded-full object-cover shadow-sm border border-white">
+                <div class="bubble-left px-4 py-3.5 flex items-center gap-1.5">
+                    <span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>
+                </div>`;
+            stream.appendChild(el);
+            stream.scrollTop = stream.scrollHeight;
+        }
+
+        function hideTyping() {
+            const el = document.getElementById('typing-indicator');
+            if (el) el.remove();
+        }
+
+        async function askClaude(userText) {
+            state.history.push({ role: 'user', content: userText });
+            await requestReply();
+        }
+
+        async function requestReply() {
+            state.waiting = true;
+            showTyping();
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        messages: state.history,
+                        partnerName: CONFIG.partnerName,
+                        stickers: state.stickers.map(s => ({ id: s.id, name: s.name, desc: s.desc }))
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || '请求失败');
+                deliverReply(data.text || '');
+            } catch (err) {
+                appendMessage('partner', `（出错了：${err.message}）`);
+            } finally {
+                hideTyping();
+                state.waiting = false;
+            }
+        }
+
+        function deliverReply(raw) {
+            // Claude 可能在末尾用 [sticker:id] 发表情包
+            const m = raw.match(/\[sticker:(\d+)\]\s*$/);
+            const sticker = m ? state.stickers.find(s => s.id === Number(m[1])) : null;
+            const text = raw.replace(/\[sticker:\d+\]\s*$/, '').trim();
+
+            if (text) appendMessage('partner', text);
+            if (sticker) appendMessage('partner', '', 'sticker', sticker);
+            state.history.push({
+                role: 'assistant',
+                content: (text + (sticker ? ` [表情包：${sticker.name}]` : '')).trim() || '……'
+            });
+        }
+
+        // ===== 三点菜单 =====
+        function toggleMoreMenu() {
+            const menu = document.getElementById('more-menu');
+            const wasHidden = menu.classList.contains('hidden');
+            if (wasHidden) {
+                closeStickerDrawer();
+                closePlusMenu();
+                menu.classList.remove('hidden');
+                lucide.createIcons();
+            } else {
+                menu.classList.add('hidden');
+            }
+        }
+
+        function closeMoreMenu() {
+            document.getElementById('more-menu').classList.add('hidden');
+        }
+
+        // ===== 查找聊天记录 =====
+        function openSearch() {
+            closeMoreMenu();
+            document.getElementById('search-panel').classList.remove('hidden');
+            document.getElementById('search-panel').classList.add('flex');
+            setTimeout(() => document.getElementById('search-input').focus(), 50);
+        }
+
+        function closeSearch() {
+            document.getElementById('search-panel').classList.add('hidden');
+            document.getElementById('search-panel').classList.remove('flex');
+            document.getElementById('search-input').value = '';
+            document.getElementById('search-results').innerHTML = '<p class="text-center text-xs text-stone-400 py-8">输入关键词开始搜索</p>';
+        }
+
+        function escapeRegExp(s) {
+            return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+        }
+
+        function performSearch(keyword) {
+            const results = document.getElementById('search-results');
+            const kw = keyword.trim();
+            if (!kw) {
+                results.innerHTML = '<p class="text-center text-xs text-stone-400 py-8">输入关键词开始搜索</p>';
+                return;
+            }
+
+            const items = document.querySelectorAll('#chat-stream .msg-item');
+            const matched = [];
+            items.forEach((el, idx) => {
+                const text = el.getAttribute('data-search') || '';
+                if (text.toLowerCase().includes(kw.toLowerCase())) {
+                    const sender = el.getAttribute('data-sender');
+                    matched.push({ text, sender, index: idx });
+                }
+            });
+
+            if (matched.length === 0) {
+                results.innerHTML = '<p class="text-center text-xs text-stone-400 py-8">没有找到相关聊天记录</p>';
+                return;
+            }
+
+            const re = new RegExp(escapeRegExp(kw), 'gi');
+            results.innerHTML = '';
+            matched.forEach(m => {
+                const card = document.createElement('div');
+                card.className = 'bg-white border border-stone-200/60 rounded-2xl p-3 cursor-pointer hover:bg-amber-50/50 transition';
+                const who = m.sender === 'user' ? '我' : CONFIG.partnerName;
+                const avatar = m.sender === 'user' ? state.userAvatar : state.partnerAvatar;
+                const hlText = escapeHtml(m.text).replace(re, (match) => `<span class="search-hl">${match}</span>`);
+                card.innerHTML = `
+                    <div class="flex items-center gap-2 mb-1.5">
+                        <img src="${avatar}" class="w-6 h-6 rounded-full object-cover border border-white">
+                        <span class="text-[11px] font-medium text-stone-500">${escapeHtml(who)}</span>
+                    </div>
+                    <p class="text-xs text-stone-700 leading-relaxed line-clamp-2">${hlText}</p>
+                `;
+                card.onclick = () => jumpToMessage(m.index);
+                results.appendChild(card);
+            });
+        }
+
+        function jumpToMessage(index) {
+            closeSearch();
+            const el = document.querySelectorAll('#chat-stream .msg-item')[index];
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                el.classList.add('flash-highlight');
+                setTimeout(() => el.classList.remove('flash-highlight'), 2200);
+            }
+        }
+
+        // ===== 修改聊天背景 =====
+        function openBgPanel() {
+            closeMoreMenu();
+            const panel = document.getElementById('bg-panel');
+            panel.classList.remove('hidden');
+            panel.classList.add('flex');
+            lucide.createIcons();
+        }
+
+        function closeBgPanel() {
+            const panel = document.getElementById('bg-panel');
+            panel.classList.add('hidden');
+            panel.classList.remove('flex');
+        }
+
+        function applyBgColor(value, btn) {
+            const stream = document.getElementById('chat-stream');
+            if (value.startsWith('linear-gradient')) {
+                stream.style.backgroundImage = value;
+                stream.style.backgroundColor = '';
+            } else {
+                stream.style.backgroundImage = '';
+                stream.style.backgroundColor = value;
+            }
+            document.querySelectorAll('.bg-swatch').forEach(el => el.classList.remove('selected'));
+            if (btn) btn.classList.add('selected');
+        }
+
+        function pickBgImage() {
+            document.getElementById('bg-input').click();
+        }
+
+        document.getElementById('bg-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    const stream = document.getElementById('chat-stream');
+                    stream.style.backgroundImage = `url(${evt.target.result})`;
+                    stream.style.backgroundSize = 'cover';
+                    stream.style.backgroundPosition = 'center';
+                    stream.style.backgroundColor = '';
+                    document.querySelectorAll('.bg-swatch').forEach(el => el.classList.remove('selected'));
+                    e.target.value = '';
+                    closeBgPanel();
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // ===== 修改气泡颜色 =====
+        function openBubblePanel() {
+            closeMoreMenu();
+            const panel = document.getElementById('bubble-panel');
+            panel.classList.remove('hidden');
+            panel.classList.add('flex');
+            lucide.createIcons();
+        }
+
+        function closeBubblePanel() {
+            const panel = document.getElementById('bubble-panel');
+            panel.classList.add('hidden');
+            panel.classList.remove('flex');
+        }
+
+        function applyBubbleColor(side, value, btn) {
+            const varName = side === 'left' ? '--bubble-left-bg' : '--bubble-right-bg';
+            document.documentElement.style.setProperty(varName, value);
+            const gridId = side === 'left' ? 'bubble-left-grid' : 'bubble-right-grid';
+            document.querySelectorAll(`#${gridId} .bubble-swatch`).forEach(el => el.classList.remove('selected'));
+            if (btn) btn.classList.add('selected');
+        }
+
+        function resetBubbleColors() {
+            document.documentElement.style.removeProperty('--bubble-left-bg');
+            document.documentElement.style.removeProperty('--bubble-right-bg');
+            document.querySelectorAll('.bubble-swatch').forEach(el => el.classList.remove('selected'));
+        }
+
+        // ===== 贴纸面板 =====
+        function openStickerDrawer() {
+            const drawer = document.getElementById('sticker-drawer');
+            drawer.classList.remove('translate-y-4', 'opacity-0', 'pointer-events-none');
+            closePlusMenu();
+            closeMoreMenu();
+            renderStickerGrid();
+        }
+
+        function closeStickerDrawer() {
+            const drawer = document.getElementById('sticker-drawer');
+            drawer.classList.add('translate-y-4', 'opacity-0', 'pointer-events-none');
+        }
+
+        function toggleStickerDrawer() {
+            const drawer = document.getElementById('sticker-drawer');
+            if (drawer.classList.contains('opacity-0')) {
+                openStickerDrawer();
+            } else {
+                closeStickerDrawer();
+            }
+        }
+
+        function renderStickerGrid() {
+            const grid = document.getElementById('sticker-grid');
+            grid.innerHTML = '';
+            state.stickers.forEach(s => {
+                const item = document.createElement('div');
+                item.className = 'relative group bg-stone-50 rounded-2xl p-2 border border-stone-200/60 flex flex-col items-center justify-center cursor-pointer hover:bg-amber-50 transition';
+                item.innerHTML = `
+                    <button class="edit-btn absolute top-1 right-1 w-5 h-5 rounded-full bg-white/90 text-stone-500 flex items-center justify-center shadow-sm hover:bg-white hover:text-amber-600 transition" title="编辑描述">
+                        <i data-lucide="pencil" class="w-3 h-3"></i>
+                    </button>
+                    <img src="${s.url}" class="w-12 h-12 object-contain mb-1">
+                    <span class="text-[10px] text-stone-600 truncate w-full text-center">${escapeHtml(s.name)}</span>
+                `;
+                item.onclick = (e) => {
+                    if (e.target.closest('.edit-btn')) return;
+                    if (state.waiting) return;
+                    appendMessage('user', '', 'sticker', s);
+                    closeStickerDrawer();
+                    askClaude(`[表情包：${s.name}] ${s.desc}`);
+                };
+                item.querySelector('.edit-btn').onclick = (e) => {
+                    e.stopPropagation();
+                    openStickerEditModal(s);
+                };
+                grid.appendChild(item);
+            });
+            lucide.createIcons();
+        }
+
+        // ===== 编辑弹窗 =====
+        function openStickerEditModal(sticker) {
+            state.editingStickerId = sticker.id;
+            document.getElementById('sticker-detail-img').src = sticker.url;
+            document.getElementById('sticker-edit-name').value = sticker.name;
+            document.getElementById('sticker-edit-desc').value = sticker.desc;
+            document.getElementById('sticker-modal').classList.remove('hidden');
+        }
+
+        function closeStickerModal() {
+            document.getElementById('sticker-modal').classList.add('hidden');
+        }
+
+        document.getElementById('save-sticker-btn').onclick = () => {
+            const s = state.stickers.find(x => x.id === state.editingStickerId);
+            if (s) {
+                const newName = document.getElementById('sticker-edit-name').value.trim();
+                const newDesc = document.getElementById('sticker-edit-desc').value.trim();
+                if (newName) s.name = newName;
+                s.desc = newDesc;
+            }
+            closeStickerModal();
+            renderStickerGrid();
+        };
+
+        // ===== 加号菜单 =====
+        function togglePlusMenu() {
+            const menu = document.getElementById('plus-menu');
+            const wasHidden = menu.classList.contains('hidden');
+            if (wasHidden) {
+                closeStickerDrawer();
+                closeMoreMenu();
+                menu.classList.remove('hidden');
+                lucide.createIcons();
+            } else {
+                menu.classList.add('hidden');
+            }
+        }
+
+        function closePlusMenu() {
+            document.getElementById('plus-menu').classList.add('hidden');
+        }
+
+        function pickAttachment(type) {
+            closePlusMenu();
+            if (type === 'image') {
+                document.getElementById('attachment-input').click();
+            } else if (type === 'video') {
+                document.getElementById('video-input').click();
+            } else if (type === 'file') {
+                document.getElementById('file-input').click();
+            } else if (type === 'link') {
+                const url = prompt('请输入链接：');
+                if (url && url.trim() && !state.waiting) {
+                    appendMessage('user', url.trim());
+                    askClaude(url.trim());
+                }
+            }
+        }
+
+        // 点击空白处关闭所有抽屉
+        document.addEventListener('click', (e) => {
+            const drawer = document.getElementById('sticker-drawer');
+            const plusMenu = document.getElementById('plus-menu');
+            const moreMenu = document.getElementById('more-menu');
+            const stickerBtn = document.getElementById('sticker-btn');
+            const plusBtn = document.getElementById('plus-btn');
+            const moreBtn = document.getElementById('more-btn');
+            const modal = document.getElementById('sticker-modal');
+
+            if (!drawer.classList.contains('opacity-0')) {
+                if (!drawer.contains(e.target) && !stickerBtn.contains(e.target) && !modal.contains(e.target)) {
+                    closeStickerDrawer();
+                }
+            }
+            if (!plusMenu.classList.contains('hidden')) {
+                if (!plusMenu.contains(e.target) && !plusBtn.contains(e.target)) {
+                    closePlusMenu();
+                }
+            }
+            if (!moreMenu.classList.contains('hidden')) {
+                if (!moreMenu.contains(e.target) && !moreBtn.contains(e.target)) {
+                    closeMoreMenu();
+                }
+            }
+        });
+
+        function closeAllDrawers() {
+            closeStickerDrawer();
+            closePlusMenu();
+            closeMoreMenu();
+        }
+
+        // ===== 录音、通话等（目前仍是界面演示，未接入真实语音）=====
+        function toggleVoiceRecording() {
+            document.getElementById('voice-record-bar').classList.toggle('hidden');
+            closeAllDrawers();
+        }
+
+        function sendVoiceMessage() {
+            appendMessage('user', '0:05', 'voice');
+            toggleVoiceRecording();
+        }
+
+        function triggerCall() {
+            document.getElementById('call-overlay').classList.remove('hidden');
+        }
+
+        function endCall() {
+            document.getElementById('call-overlay').classList.add('hidden');
+        }
+
+        function playVoice(elem) {
+            const btn = elem.querySelector('button');
+            btn.classList.add('scale-110');
+            setTimeout(() => btn.classList.remove('scale-110'), 300);
+        }
+
+        // ===== 头像上传 =====
+        function triggerAvatarUpload(target) {
+            state.activeAvatarTarget = target;
+            closeMoreMenu();
+            document.getElementById('avatar-input').click();
+        }
+
+        document.getElementById('avatar-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    if (state.activeAvatarTarget === 'user') {
+                        state.userAvatar = evt.target.result;
+                        document.querySelectorAll('#user-avatar-1').forEach(img => img.src = evt.target.result);
+                    } else {
+                        state.partnerAvatar = evt.target.result;
+                        document.querySelectorAll('[id^="partner-avatar"]').forEach(img => img.src = evt.target.result);
+                    }
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // ===== 附件上传：图片 =====
+        document.getElementById('attachment-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    appendMessage('user', `<img src="${evt.target.result}" class="max-w-[180px] rounded-xl">`, 'html');
+                    e.target.value = '';
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // ===== 附件上传：视频 =====
+        document.getElementById('video-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const url = URL.createObjectURL(file);
+                appendMessage('user', `<video src="${url}" controls class="max-w-[220px] rounded-xl"></video>`, 'html');
+                e.target.value = '';
+            }
+        });
+
+        // ===== 附件上传：文件 =====
+        document.getElementById('file-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                appendMessage('user', `📎 ${file.name}`);
+                e.target.value = '';
+            }
+        });
+
+        // ===== 顶部 ID 设置 =====
+        function openProfileSettings() {
+            closeMoreMenu();
+            const newName = prompt('自定义对方 ID：', CONFIG.partnerName);
+            if (newName && newName.trim()) {
+                CONFIG.partnerName = newName.trim();
+                applyPartnerName();
+            }
+        }
+
+        applyPartnerName();
+    </script>
+</body>
+</html>
