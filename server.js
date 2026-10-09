@@ -108,6 +108,14 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, fs.readFileSync(path.join(here, "public/chat.html")), "text/html; charset=utf-8");
     }
 
+    const STATIC = {
+      "/icon.png": "image/png",
+      "/manifest.webmanifest": "application/manifest+json; charset=utf-8",
+    };
+    if (req.method === "GET" && STATIC[req.url]) {
+      return send(res, 200, fs.readFileSync(path.join(here, "public", req.url)), STATIC[req.url]);
+    }
+
     if (req.method === "POST" && req.url === "/api/chat") {
       const { messages, partnerName = "Claude", stickers = [] } = JSON.parse(await readBody(req));
       if (!Array.isArray(messages) || messages.length === 0 || messages.at(-1).role !== "user") {

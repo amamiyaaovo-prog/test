@@ -1,0 +1,9 @@
+{
+  "name": "聊天",
+  "short_name": "聊天",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fdfbf7",
+  "theme_color": "#f7f3ec",
+  "icons": [{ "src": "/icon.png", "sizes": "512x512", "type": "image/png" }]
+}
