@@ -4,12 +4,39 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
 import Anthropic from "@anthropic-ai/sdk";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
-const client = new Anthropic(); // 自动读取 ANTHROPIC_API_KEY
+// 有 ANTHROPIC_API_KEY 就走官方 API；没有就走本机已登录的 Claude Code（claude -p，用你的订阅）
+const USE_CLI = process.env.CLAUDE_BACKEND === "cli" || !process.env.ANTHROPIC_API_KEY;
+const client = USE_CLI ? null : new Anthropic();
+
+function askViaCli(system, messages) {
+  // 把对话整理成文字稿，让 claude -p 续写"下一条回复"
+  const transcript = messages
+    .map((m) => `${m.role === "user" ? "用户" : "你"}：${m.content}`)
+    .join("\n");
+  const prompt = `以下是聊天记录，请只输出你的下一条回复本身（不要加"你："前缀）：\n\n${transcript}`;
+  return new Promise((resolve, reject) => {
+    const args = ["-p", "--system-prompt", system, "--tools", "", "--no-session-persistence",
+                  "--setting-sources", "", "--output-format", "text"];
+    if (process.env.CLAUDE_MODEL) args.push("--model", process.env.CLAUDE_MODEL);
+    const child = spawn("claude", args, { stdio: ["pipe", "pipe", "pipe"] });
+    let out = "", err = "";
+    const timer = setTimeout(() => { child.kill(); reject(new Error("Claude 响应超时")); }, 120_000);
+    child.stdout.on("data", (d) => (out += d));
+    child.stderr.on("data", (d) => (err += d));
+    child.on("error", (e) => { clearTimeout(timer); reject(new Error("找不到 claude 命令，请先安装并登录 Claude Code：" + e.message)); });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      code === 0 ? resolve(out.trim()) : reject(new Error(err.trim() || `claude 退出码 ${code}`));
+    });
+    child.stdin.end(prompt);
+  });
+}
 
 function buildSystem(partnerName, stickers) {
   const list = stickers.map((s) => `- id=${s.id} 「${s.name}」：${s.desc}`).join("\n");
@@ -55,11 +82,16 @@ const server = http.createServer(async (req, res) => {
       }));
       while (clean.length && clean[0].role !== "user") clean.shift();
 
+      const system = buildSystem(String(partnerName).slice(0, 40), stickers.slice(0, 30));
+      if (USE_CLI) {
+        return send(res, 200, { text: await askViaCli(system, clean) });
+      }
+
       const response = await client.messages.create({
         model: MODEL,
         max_tokens: 1024,
         output_config: { effort: "low" }, // 聊天追求快；想更"用心"可改 medium/high
-        system: buildSystem(String(partnerName).slice(0, 40), stickers.slice(0, 30)),
+        system,
         messages: clean,
       });
 
@@ -78,4 +110,4 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => console.log(`打开 http://localhost:${PORT}`));
+server.listen(PORT, () => console.log(`打开 http://localhost:${PORT}（${USE_CLI ? "使用本机 Claude Code 登录" : "使用 API Key"}）`));
