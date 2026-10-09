@@ -581,8 +581,8 @@
             if (el) el.remove();
         }
 
-        async function askClaude(userText) {
-            state.history.push({ role: 'user', content: userText });
+        async function askClaude(userText, images = []) {
+            state.history.push({ role: 'user', content: userText, images });
             await requestReply();
         }
 
@@ -605,6 +605,8 @@
             } catch (err) {
                 appendMessage('partner', `（出错了：${err.message}）`);
             } finally {
+                // 图片只随当次消息发送，之后不再重复上传
+                state.history.forEach(m => delete m.images);
                 hideTyping();
                 state.waiting = false;
             }
@@ -991,36 +993,68 @@
             }
         });
 
-        // ===== 附件上传：图片 =====
-        document.getElementById('attachment-input').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(evt) {
-                    appendMessage('user', `<img src="${evt.target.result}" class="max-w-[180px] rounded-xl">`, 'html');
-                    e.target.value = '';
+        // ===== 附件上传 =====
+        function fileToResizedDataUrl(file, max = 1280) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                const url = URL.createObjectURL(file);
+                img.onload = () => {
+                    const s = Math.min(1, max / Math.max(img.width, img.height));
+                    const c = document.createElement('canvas');
+                    c.width = Math.round(img.width * s);
+                    c.height = Math.round(img.height * s);
+                    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+                    URL.revokeObjectURL(url);
+                    resolve(c.toDataURL('image/jpeg', 0.85));
                 };
-                reader.readAsDataURL(file);
+                img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片读取失败')); };
+                img.src = url;
+            });
+        }
+
+        // 图片：压缩后发给 Claude，它能看到
+        document.getElementById('attachment-input').addEventListener('change', async function(e) {
+            const file = e.target.files[0];
+            e.target.value = '';
+            if (!file || state.waiting) return;
+            try {
+                const dataUrl = await fileToResizedDataUrl(file);
+                appendMessage('user', `<img src="${dataUrl}" class="max-w-[180px] rounded-xl">`, 'html');
+                askClaude('[发送了一张图片]', [dataUrl]);
+            } catch (err) {
+                appendMessage('partner', `（${err.message}）`);
             }
         });
 
-        // ===== 附件上传：视频 =====
+        // 视频：只在界面显示，Claude 看不到内容，但会知道你发了视频
         document.getElementById('video-input').addEventListener('change', function(e) {
             const file = e.target.files[0];
-            if (file) {
-                const url = URL.createObjectURL(file);
-                appendMessage('user', `<video src="${url}" controls class="max-w-[220px] rounded-xl"></video>`, 'html');
-                e.target.value = '';
-            }
+            e.target.value = '';
+            if (!file || state.waiting) return;
+            const url = URL.createObjectURL(file);
+            appendMessage('user', `<video src="${url}" controls class="max-w-[220px] rounded-xl"></video>`, 'html');
+            askClaude('[发送了一段视频（你看不到视频内容）]');
         });
 
-        // ===== 附件上传：文件 =====
-        document.getElementById('file-input').addEventListener('change', function(e) {
+        // 文件：文字类文件的内容会发给 Claude
+        const TEXT_EXT = /\.(txt|md|markdown|csv|json|log|html|css|js|ts|py|xml|yaml|yml|ini|srt)$/i;
+        const MAX_FILE_CHARS = 60000;
+        document.getElementById('file-input').addEventListener('change', async function(e) {
             const file = e.target.files[0];
-            if (file) {
-                appendMessage('user', `📎 ${file.name}`);
-                e.target.value = '';
+            e.target.value = '';
+            if (!file || state.waiting) return;
+            appendMessage('user', `📎 ${file.name}`);
+            if (!(file.type.startsWith('text/') || TEXT_EXT.test(file.name))) {
+                askClaude(`[发送了文件：${file.name}（这种格式你读不了，只能看到文件名）]`);
+                return;
             }
+            let text = await file.text();
+            let note = '';
+            if (text.length > MAX_FILE_CHARS) {
+                text = text.slice(0, MAX_FILE_CHARS);
+                note = `\n（文件太长，只发送了前 ${MAX_FILE_CHARS} 个字符）`;
+            }
+            askClaude(`[文件：${file.name}]\n${text}${note}`);
         });
 
         // ===== 顶部 ID 设置 =====
