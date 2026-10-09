@@ -2,6 +2,7 @@
 // API Key 只放在这里（环境变量），绝不能写进网页。
 import http from "node:http";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
@@ -20,18 +21,27 @@ function askViaCli(system, messages) {
     .map((m) => `${m.role === "user" ? "用户" : "你"}：${m.content}`)
     .join("\n");
   const prompt = `以下是聊天记录，请只输出你的下一条回复本身（不要加"你："前缀）：\n\n${transcript}`;
+  // 系统提示写进临时文件，避免在 Windows 命令行里处理引号和换行
+  const promptFile = path.join(os.tmpdir(), `chat-system-${process.pid}-${Date.now()}.txt`);
+  fs.writeFileSync(promptFile, system, "utf8");
+  const cleanup = () => fs.rmSync(promptFile, { force: true });
+
   return new Promise((resolve, reject) => {
-    const args = ["-p", "--system-prompt", system, "--tools", "", "--no-session-persistence",
-                  "--setting-sources", "", "--output-format", "text"];
-    if (process.env.CLAUDE_MODEL) args.push("--model", process.env.CLAUDE_MODEL);
-    const child = spawn("claude", args, { stdio: ["pipe", "pipe", "pipe"] });
+    const flags = ["-p", "--system-prompt-file", promptFile, "--tools", "", "--no-session-persistence",
+                   "--setting-sources", "", "--output-format", "text"];
+    if (process.env.CLAUDE_MODEL) flags.push("--model", process.env.CLAUDE_MODEL);
+    // Windows 上 claude 是 claude.cmd，必须通过 shell 启动；此时参数要自己加引号
+    const child = process.platform === "win32"
+      ? spawn(["claude", ...flags.map((a) => `"${a}"`)].join(" "), { shell: true, stdio: ["pipe", "pipe", "pipe"] })
+      : spawn("claude", flags, { stdio: ["pipe", "pipe", "pipe"] });
     let out = "", err = "";
-    const timer = setTimeout(() => { child.kill(); reject(new Error("Claude 响应超时")); }, 120_000);
+    const timer = setTimeout(() => { child.kill(); cleanup(); reject(new Error("Claude 响应超时")); }, 120_000);
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (err += d));
-    child.on("error", (e) => { clearTimeout(timer); reject(new Error("找不到 claude 命令，请先安装并登录 Claude Code：" + e.message)); });
+    child.on("error", (e) => { clearTimeout(timer); cleanup(); reject(new Error("找不到 claude 命令，请先安装并登录 Claude Code：" + e.message)); });
     child.on("close", (code) => {
       clearTimeout(timer);
+      cleanup();
       code === 0 ? resolve(out.trim()) : reject(new Error(err.trim() || `claude 退出码 ${code}`));
     });
     child.stdin.end(prompt);
